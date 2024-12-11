@@ -1,0 +1,1 @@
+# Go_ressource_viewver
