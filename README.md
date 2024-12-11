@@ -7,3 +7,11 @@ Idée de base :
   - le serveur : héberge un site web qui va récupérer les ressources des différentes machines.
     
   - l'utilisateur : Ce connecte via une interface web sur le serveur est peu ajouter les machines qu'il veut (entre de gros guillemet "suppervisé"
+
+commandes clients windows :
+go mod init Go_ressource_viewver/client/windows
+go get github.com/gin-gonic/gin
+go get github.com/shirou/gopsutil/cpu
+go get github.com/shirou/gopsutil/mem
+go get github.com/shirou/gopsutil/disk
+go get github.com/shirou/gopsutil/net
