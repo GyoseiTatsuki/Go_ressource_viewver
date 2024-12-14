@@ -1,78 +1,109 @@
 package main
 
 import (
+	"encoding/json"
+	"fmt"
 	"io/ioutil"
-	"log"
 	"net/http"
-
-	"github.com/gin-gonic/gin"
+	"sync"
+	"time"
 )
 
-// Structure pour stocker les données des clients
-type SystemStats struct {
-	CPUUsage    float64 `json:"cpu_usage"`
-	MemoryUsage float64 `json:"memory_usage"`
-	DiskUsage   float64 `json:"disk_usage"`
-	Network     struct {
-		BytesSent uint64 `json:"bytes_sent"`
-		BytesRecv uint64 `json:"bytes_recv"`
-	} `json:"network"`
+// Structs pour modéliser les données
+type Network struct {
+	BytesSent uint64 `json:"BytesSent"`
+	BytesRecv uint64 `json:"BytesRecv"`
 }
 
+type IPData struct {
+	IP          string  `json:"ip"`
+	CPUUsage    float64 `json:"CPUUsage"`
+	MemoryUsage int     `json:"MemoryUsage"`
+	DiskUsage   float64 `json:"DiskUsage"`
+	Network     Network `json:"Network"`
+}
+
+var (
+	ipList    []string
+	ipData    []IPData
+	dataMutex sync.Mutex
+)
+
 func main() {
-	r := gin.Default()
+	// Servir le fichier HTML
+	http.Handle("/", http.FileServer(http.Dir("./")))
 
-	// Route pour récupérer les données du client
-	r.GET("/api/collecte", func(c *gin.Context) {
-		// Remplacez l'URL par l'adresse de votre client
-		resp, err := http.Get("http://localhost:8080/api/collecte")
-		if err != nil {
-			log.Println("Error fetching data from client:", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch data from client"})
-			return
+	// API routes
+	http.HandleFunc("/add-ip", addIPHandler)
+	http.HandleFunc("/data", dataHandler)
+
+	go updateDataPeriodically()
+
+	fmt.Println("Server started on http://localhost:8081")
+	http.ListenAndServe(":8081", nil)
+}
+
+// Handler pour ajouter une IP
+func addIPHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var requestData struct {
+		IP string `json:"ip"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&requestData); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	dataMutex.Lock()
+	ipList = append(ipList, requestData.IP)
+	dataMutex.Unlock()
+
+	w.WriteHeader(http.StatusOK)
+}
+
+// Handler pour récupérer les données
+func dataHandler(w http.ResponseWriter, r *http.Request) {
+	dataMutex.Lock()
+	defer dataMutex.Unlock()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(ipData)
+}
+
+// Fonction pour mettre à jour les données périodiquement
+func updateDataPeriodically() {
+	for {
+		dataMutex.Lock()
+		var newData []IPData
+		for _, ip := range ipList {
+			url := fmt.Sprintf("http://%s:8080/api/collecte", ip)
+			resp, err := http.Get(url)
+			if err != nil {
+				fmt.Printf("Failed to fetch data for IP %s: %v\n", ip, err)
+				continue
+			}
+			body, err := ioutil.ReadAll(resp.Body)
+			if err != nil {
+				fmt.Printf("Failed to read response for IP %s: %v\n", ip, err)
+				resp.Body.Close()
+				continue
+			}
+			resp.Body.Close()
+
+			var data IPData
+			if err := json.Unmarshal(body, &data); err != nil {
+				fmt.Printf("Failed to parse JSON for IP %s: %v\n", ip, err)
+				continue
+			}
+			data.IP = ip
+			newData = append(newData, data)
 		}
-		defer resp.Body.Close()
-
-		body, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			log.Println("Error reading response body:", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read response"})
-			return
-		}
-
-		// Retourner les données du client
-		c.Data(http.StatusOK, "application/json", body)
-	})
-
-	// Route pour afficher les données sur une page web
-	r.GET("/stats", func(c *gin.Context) {
-		// Récupérer les données du client
-		resp, err := http.Get("http://localhost:8080/api/collecte")
-		if err != nil {
-			log.Println("Error fetching data from client:", err)
-			c.String(http.StatusInternalServerError, "Failed to fetch data from client")
-			return
-		}
-		defer resp.Body.Close()
-
-		body, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			log.Println("Error reading response body:", err)
-			c.String(http.StatusInternalServerError, "Failed to read response")
-			return
-		}
-
-		// Afficher les données sur une page web
-		c.HTML(http.StatusOK, "stats.html", gin.H{
-			"data": string(body),
-		})
-	})
-
-	// Charger le template HTML
-	r.LoadHTMLFiles("stats.html")
-
-	// Démarrer le serveur sur le port 8080
-	if err := r.Run(":8081"); err != nil {
-		panic(err)
+		ipData = newData
+		dataMutex.Unlock()
+		time.Sleep(5 * time.Second)
 	}
 }
