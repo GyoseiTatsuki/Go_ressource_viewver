@@ -14,4 +14,9 @@ go get github.com/gin-gonic/gin
 go get github.com/shirou/gopsutil/cpu
 go get github.com/shirou/gopsutil/mem
 go get github.com/shirou/gopsutil/disk
-go get github.com/shirou/gopsutil/net
+
+Pour client linux :
+go mod init Go_ressource_viewver/client/linux
+go get github.com/shirou/gopsutil/v3/mem
+go get github.com/shirou/gopsutil/v3/disk
+go get github.com/shirou/gopsutil/v3/cpu
