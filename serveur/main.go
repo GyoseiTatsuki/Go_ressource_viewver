@@ -42,6 +42,11 @@ func statsHandler(ipList []string) http.HandlerFunc {
 		html := `<html>
 		<head>
 			<title>System Stats</title>
+			<script type="text/javascript">
+				setTimeout(function(){
+					location.reload();
+				}, 1000); // Rafraîchit la page toutes les 1000 ms (1 seconde)
+			</script>
 		</head>
 		<body>
 			<h1>System Statistics</h1>
@@ -91,6 +96,6 @@ func main() {
 	}
 
 	http.HandleFunc("/", statsHandler(ipList))
-	fmt.Println("Server running on http://localhost:8081")
-	http.ListenAndServe(":8081", nil)
+	fmt.Println("Server running on http://0.0.0.0:8081")
+	http.ListenAndServe("0.0.0.0:8081", nil)
 }
