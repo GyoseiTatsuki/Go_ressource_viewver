@@ -5,105 +5,92 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
-	"sync"
-	"time"
 )
 
-// Structs pour modéliser les données
-type Network struct {
-	BytesSent uint64 `json:"BytesSent"`
-	BytesRecv uint64 `json:"BytesRecv"`
-}
-
-type IPData struct {
-	IP          string  `json:"ip"`
+type Stats struct {
 	CPUUsage    float64 `json:"CPUUsage"`
-	MemoryUsage int     `json:"MemoryUsage"`
+	MemoryUsage float64 `json:"MemoryUsage"`
 	DiskUsage   float64 `json:"DiskUsage"`
-	Network     Network `json:"Network"`
 }
 
-var (
-	ipList    []string
-	ipData    []IPData
-	dataMutex sync.Mutex
-)
+func fetchStats(apiURL string) (*Stats, error) {
+	resp, err := http.Get(apiURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch stats: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	var stats Stats
+	if err := json.Unmarshal(body, &stats); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal JSON: %w", err)
+	}
+
+	return &stats, nil
+}
+
+func statsHandler(ipList []string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		html := `<html>
+		<head>
+			<title>System Stats</title>
+		</head>
+		<body>
+			<h1>System Statistics</h1>
+			<ul>`
+
+		for _, ip := range ipList {
+			apiURL := fmt.Sprintf("http://%s:8080/stats", ip)
+			stats, err := fetchStats(apiURL)
+			if err != nil {
+				html += fmt.Sprintf("<li><strong>IP %s:</strong> Error fetching stats (%v)</li>", ip, err)
+				continue
+			}
+
+			html += fmt.Sprintf(`
+				<li>
+					<strong>IP %s:</strong>
+					<ul>
+						<li>CPU Usage: %.2f%%</li>
+						<li>Memory Usage: %.2f%%</li>
+						<li>Disk Usage: %.2f%%</li>
+					</ul>
+				</li>
+			`, ip, stats.CPUUsage, stats.MemoryUsage, stats.DiskUsage)
+		}
+
+		html += `</ul></body></html>`
+
+		fmt.Fprint(w, html)
+	}
+}
 
 func main() {
-	// Servir le fichier HTML
-	http.Handle("/", http.FileServer(http.Dir("./")))
-
-	// API routes
-	http.HandleFunc("/add-ip", addIPHandler)
-	http.HandleFunc("/data", dataHandler)
-
-	go updateDataPeriodically()
-
-	fmt.Println("Server started on http://localhost:8081")
-	http.ListenAndServe(":8081", nil)
-}
-
-// Handler pour ajouter une IP
-func addIPHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
-		return
-	}
-
-	var requestData struct {
-		IP string `json:"ip"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&requestData); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
-		return
-	}
-
-	dataMutex.Lock()
-	ipList = append(ipList, requestData.IP)
-	dataMutex.Unlock()
-
-	w.WriteHeader(http.StatusOK)
-}
-
-// Handler pour récupérer les données
-func dataHandler(w http.ResponseWriter, r *http.Request) {
-	dataMutex.Lock()
-	defer dataMutex.Unlock()
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(ipData)
-}
-
-// Fonction pour mettre à jour les données périodiquement
-func updateDataPeriodically() {
+	var ipList []string
 	for {
-		dataMutex.Lock()
-		var newData []IPData
-		for _, ip := range ipList {
-			url := fmt.Sprintf("http://%s:8080/api/collecte", ip)
-			resp, err := http.Get(url)
-			if err != nil {
-				fmt.Printf("Failed to fetch data for IP %s: %v\n", ip, err)
-				continue
-			}
-			body, err := ioutil.ReadAll(resp.Body)
-			if err != nil {
-				fmt.Printf("Failed to read response for IP %s: %v\n", ip, err)
-				resp.Body.Close()
-				continue
-			}
-			resp.Body.Close()
-
-			var data IPData
-			if err := json.Unmarshal(body, &data); err != nil {
-				fmt.Printf("Failed to parse JSON for IP %s: %v\n", ip, err)
-				continue
-			}
-			data.IP = ip
-			newData = append(newData, data)
+		var ip string
+		fmt.Print("Enter a server IP address (or press Enter to finish): ")
+		fmt.Scanln(&ip)
+		if ip == "" {
+			break
 		}
-		ipData = newData
-		dataMutex.Unlock()
-		time.Sleep(5 * time.Second)
+		ipList = append(ipList, ip)
 	}
+
+	if len(ipList) == 0 {
+		fmt.Println("No IP addresses provided. Exiting.")
+		return
+	}
+
+	http.HandleFunc("/", statsHandler(ipList))
+	fmt.Println("Server running on http://localhost:8081")
+	http.ListenAndServe(":8081", nil)
 }
