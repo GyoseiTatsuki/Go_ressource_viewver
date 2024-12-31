@@ -6,8 +6,7 @@ Idée de base :
   
   - le serveur : héberge un site web qui va récupérer les ressources des différentes machines.
     
-  - l'utilisateur : Ce connecte via une interface web sur le serveur est peu ajouter les machines qu'il veut (entre de gros guillemet "suppervisé"
-
+  - l'utilisateur : Ce connecte via une interface web sur le serveur est peu ajouter les
 commandes clients windows :
 go mod init Go_ressource_viewver/client/windows
 go get github.com/gin-gonic/gin
@@ -21,3 +20,15 @@ go get github.com/gin-gonic/gin
 go get github.com/shirou/gopsutil/v3/mem
 go get github.com/shirou/gopsutil/v3/disk
 go get github.com/shirou/gopsutil/v3/cpu
+
+Comment fonctionne le projet :
+Il y a deux composants principal :
+  - le client :
+      Il contient une API qui renvoie les ressources utilisée ( CPU, RAM et disque) et les  renvoie sur @ip:8080/stats au format json :
+    {"CPUUsage":0.26036823507920076,"MemoryUsage":25.94676120264016,"DiskUsage":36.80057865965248}
+
+  - le serveur :
+      Son rôle est de récupérer les ressources de ou des ip qu'on lui renseigne pour les afficher sur une page web : @ip:8081
+
+Comment le mettre en place :
+  Dans un premier temps il faut lancer les clients, pour ça il faut
